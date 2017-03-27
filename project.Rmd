@@ -1,0 +1,128 @@
+---
+title: "Pratical Machine Learning - Course Project"
+author: Haijie Cao
+date: 27 mars 2017
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1 Setting things up
+
+## 1.1 Load useful packages
+
+```{r}
+library(rattle)
+library(caret)
+library(rpart)
+library(randomForest)
+```
+
+## 1.2 Download files
+
+```{r download}
+filename.1<-"pml-training.csv"
+if(!file.exists(filename.1)){
+        urlfile.1<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+        download.file(urlfile.1,destfile = filename.1,method = "curl")
+}
+
+filename.2<-"pml-testing.csv"
+if(!file.exists(filename.2)){
+        urlfile.2<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+        download.file(urlfile.2,destfile = filename.2,method = "curl")
+}
+```
+
+## 1.3 Read the dataset in R
+
+```{r readingData}
+## reading the data 
+trainset<-read.csv(filename.1,header = T,na.strings = c("NA","","#DIV/0!"))
+testset<-read.csv(filename.2,header = T,na.strings = c("NA","","#DIV/0!"))
+```
+
+## 1.4 Clean the dataset
+
+Our project goal is to predict the manner that people do their exercices. There are five classes for the prediction, and we should choose the variables to predict with.  
+At the fist view of the dataset, we observe that, the 7 first variables are infomations not necessary about the exercices' performance. We can leave them out. And there are many variables with lots of NA data, we could eliminate them too.  
+
+```{r treatmentTraining}
+##leave out the first 7 variable. 
+trainset<-trainset[,8:160]
+testset<-testset[,8:160]
+## eliminate the variables which have many NA data. (more than 90% NA data)
+list<-c()
+for (i in 1:153) {
+      if (sum(is.na(trainset[,i]))/nrow(trainset)>=0.9) {
+              list<-c(list,-i)
+      }
+}
+trainset<-trainset[,list]
+testset<-testset[,list]
+dim(trainset)
+```
+
+Finaly, we will keep 53 variables. 
+
+# 2 Fitting models
+
+## 2.1 Build the taining and testing set
+
+```{r split}
+## data split, training set has 60% of the data
+set.seed(12345)
+trainIndex<-createDataPartition(trainset$classe,p=0.6,list=F)
+training<-trainset[trainIndex,]
+testing<-trainset[-trainIndex,]
+```
+
+## 2.2 Cross-validation set up for training set.
+
+```{r crossValidation}
+set.seed(234)
+trainControl<-trainControl(method = "cv",number = 10)
+```
+
+## 2.3 Decision tree
+Let's start by building a decision tree, it may well be enough to predict the classes.
+```{r DecisionTree}
+## we set "accuracy" as our model evaluation metrics
+metric<-"Accuracy"
+## training the data 
+set.seed(123)
+fit.tree<-train(classe~.,data=training,method="rpart",metric=metric,trControl=trainControl)
+print(fit.tree)
+```
+We observe that the best accuracy is only 51%, it's not a good performance, it's not even necessary to evaluate the testing set. We could reject this model directly.  
+We have to try something else.
+ 
+## 2.4 Ramdom forest
+Fitting a random forest model seems a good option because it will resample and bootstrap data for each node it creates. But it will take some time to compute.
+
+```{r RandomForest}
+fit.rf<-train(classe~.,data=training,method="rf",metric=metric,
+              trControl=trainControl,prox=F)
+print(fit.rf)
+
+## challenging our model with the test set
+testRF<-predict(fit.rf,newdata=testing)
+confRF<-confusionMatrix(testing$classe,testRF)
+confRF$table
+confRF$overall[1]
+```
+
+This model's out of sample accuracy is over 99%, which is way more satisfying than the decision tree's accuracy. 
+Out of sample error :
+```{r testing}
+1-confRF$overall[1]
+```
+The out of sample error rate is of 0.8%, which is excellent.
+
+# 3 Quizz prediction
+Now let's predict the Quizz set classes : 
+```{r testset}
+predict(fit.rf,newdata = testset)
+```
